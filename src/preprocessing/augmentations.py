@@ -14,12 +14,12 @@ class AugmentationManager:
     Manager for applying various augmentations to images for training.
     
     This class provides a collection of augmentation techniques that can be
-    applied to images during training to improve model robustness and generalization.
+    applied to images during training to improve model robustness and generalisation.
     """
     
     def __init__(self, config: Dict[str, Any] = None):
         """
-        Initialize the augmentation manager.
+        Initialise the augmentation manager.
         
         Args:
             config: Dictionary containing augmentation configuration
@@ -58,7 +58,7 @@ class AugmentationManager:
         if config:
             self._update_config(config)
         
-        # Initialize augmentation pipeline
+        # Initialise augmentation pipeline
         self.transform = self._create_transform_pipeline()
     
     def _update_config(self, config: Dict[str, Any]) -> None:
@@ -176,7 +176,7 @@ class AugmentationManager:
         
         Args:
             image: Input image as numpy array (H, W, C)
-            bboxes: List of bounding boxes in YOLO format [x_center, y_center, width, height]
+            bboxes: List of bounding boxes in YOLO format [x_centre, y_centre, width, height]
             class_labels: List of class labels corresponding to bounding boxes
             
         Returns:
@@ -250,13 +250,13 @@ class AugmentationManager:
             self.logger.warning(f"Unknown augmentation type: {augmentation_type}")
             return image
     
-    def visualize_augmentations(self, image_path: str, output_dir: str) -> None:
+    def visualise_augmentations(self, image_path: str, output_dir: str) -> None:
         """
-        Visualize the effect of each augmentation on a sample image.
+        Visualise the effect of each augmentation on a sample image.
         
         Args:
             image_path: Path to sample image
-            output_dir: Directory to save visualizations
+            output_dir: Directory to save visualisations
         """
         import os
         import matplotlib.pyplot as plt
@@ -303,7 +303,7 @@ class AugmentationManager:
         plt.axis('off')
         plt.savefig(os.path.join(output_dir, "combined.jpg"))
         
-        self.logger.info(f"Saved augmentation visualizations to {output_dir}")
+        self.logger.info(f"Saved augmentation visualisations to {output_dir}")
 
 
 class LensDistortion(ImageOnlyTransform):
@@ -319,7 +319,7 @@ class LensDistortion(ImageOnlyTransform):
         p: float = 0.5
     ):
         """
-        Initialize the lens distortion transform.
+        Initialise the lens distortion transform.
         
         Args:
             barrel_factor: Strength of barrel distortion
@@ -352,18 +352,18 @@ class LensDistortion(ImageOnlyTransform):
         # Create distortion mesh
         distorted_image = np.zeros_like(image)
         
-        # Get the center of the image
-        center_x = width / 2
-        center_y = height / 2
+        # Get the centre of the image
+        centre_x = width / 2
+        centre_y = height / 2
         
         # Apply distortion to each pixel
         for y in range(height):
             for x in range(width):
                 # Normalize coordinates to [-1, 1]
-                norm_x = (x - center_x) / center_x
-                norm_y = (y - center_y) / center_y
+                norm_x = (x - centre_x) / centre_x
+                norm_y = (y - centre_y) / centre_y
                 
-                # Calculate radius from center
+                # Calculate radius from centre
                 r = np.sqrt(norm_x**2 + norm_y**2)
                 
                 # Apply distortion formula
@@ -377,8 +377,8 @@ class LensDistortion(ImageOnlyTransform):
                     src_x = x
                     src_y = y
                 else:
-                    src_x = int(center_x + norm_x / r * distorted_r * center_x)
-                    src_y = int(center_y + norm_y / r * distorted_r * center_y)
+                    src_x = int(centre_x + norm_x / r * distorted_r * centre_x)
+                    src_y = int(centre_y + norm_y / r * distorted_r * centre_y)
                 
                 # Check if source coordinates are within image bounds
                 if 0 <= src_x < width and 0 <= src_y < height:
@@ -413,12 +413,12 @@ if __name__ == "__main__":
     # Create a simple test image if no image is provided
     test_image = np.ones((640, 640, 3), dtype=np.uint8) * 128
     
-    # Draw some shapes for visualization
+    # Draw some shapes for visualisation
     cv2.rectangle(test_image, (100, 100), (300, 300), (255, 0, 0), 5)
     cv2.circle(test_image, (400, 400), 100, (0, 255, 0), 5)
     cv2.line(test_image, (0, 0), (640, 640), (0, 0, 255), 5)
     
-    # Create test bounding boxes [x_center, y_center, width, height] (normalized)
+    # Create test bounding boxes [x_centre, y_centre, width, height] (normalized)
     bboxes = [
         [0.3125, 0.3125, 0.3125, 0.3125],  # Rectangle
         [0.625, 0.625, 0.3125, 0.3125]     # Circle
@@ -429,7 +429,7 @@ if __name__ == "__main__":
     # Apply augmentations
     augmented_image, augmented_bboxes = augmenter.apply(test_image, bboxes, class_labels)
     
-    # Visualize result
+    # Visualise result
     plt.figure(figsize=(12, 6))
     
     plt.subplot(1, 2, 1)

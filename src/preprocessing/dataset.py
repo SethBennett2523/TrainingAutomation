@@ -30,7 +30,7 @@ class ConeDataset(Dataset):
         is_train: bool = True
     ):
         """
-        Initialize the cone detection dataset.
+        Initialise the cone detection dataset.
         
         Args:
             img_dir: Directory containing images
@@ -133,7 +133,7 @@ class ConeDataset(Dataset):
         for i, bbox in enumerate(bboxes):
             if i < len(class_ids):
                 class_id = class_ids[i]
-                # YOLOv8 format: [class_id, x_center, y_center, width, height]
+                # YOLOv8 format: [class_id, x_centre, y_centre, width, height]
                 label = np.array([class_id, *bbox])
                 labels.append(label)
         
@@ -219,7 +219,7 @@ class ConeDataset(Dataset):
                         parts = line.split()
                         if len(parts) == 5:
                             class_id = int(parts[0])
-                            # YOLO format: class_id, x_center, y_center, width, height
+                            # YOLO format: class_id, x_centre, y_centre, width, height
                             bbox = [float(x) for x in parts[1:5]]
                             bboxes.append(bbox)
                             class_ids.append(class_id)
@@ -258,7 +258,7 @@ class DatasetManager:
     Manager for creating and handling datasets for YOLOv8 training.
     
     This class handles loading dataset configurations, creating train/val splits,
-    and setting up data loaders with hardware-aware optimizations.
+    and setting up data loaders with hardware-aware optimisations.
     """
     
     def __init__(
@@ -270,7 +270,7 @@ class DatasetManager:
         img_size: int = 640
     ):
         """
-        Initialize the dataset manager.
+        Initialise the dataset manager.
         
         Args:
             data_yaml_path: Path to the data.yaml file
@@ -295,7 +295,7 @@ class DatasetManager:
         self.val_path = self._resolve_path(self.data_config.get('val', ''))
         self.augmentations_config = self.data_config.get('augmentations', {})
         
-        self.logger.info(f"Dataset manager initialized with batch_size={batch_size}, workers={workers}")
+        self.logger.info(f"Dataset manager initialised with batch_size={batch_size}, workers={workers}")
         if self.train_path:
             self.logger.info(f"Training data: {self.train_path}")
         if self.val_path:
@@ -617,7 +617,7 @@ if __name__ == "__main__":
         print(f"Data config file {args.data} not found")
         exit(1)
     
-    # Initialize dataset manager
+    # Initialise dataset manager
     manager = DatasetManager(args.data, batch_size=8, workers=2)
     
     # Create datasets

@@ -1,0 +1,60 @@
+# Main configuration file for TrainingAutomation
+
+# Base paths - all other paths are relative to these
+paths:
+  dataset:
+    root: "./data/FSOCO_dataset"
+    unconverted: "./Unconverted FSOCO Dataset/FSOCO_dataset"
+  output:
+    models: "./models"
+    logs: "./logs"
+  
+# Hardware configuration
+hardware:
+  # Set to 'auto' for automatic detection, or explicitly set to 'cuda', 'rocm', or 'cpu'
+  device: "auto"
+  # Set to 0 for automatic optimization based on available memory, or specify a value
+  batch_size: 0
+  workers: 0  # Number of data loader workers, 0 for automatic setting
+  memory_threshold: 0.85  # Maximum VRAM usage as a fraction (0.0-1.0)
+
+# Training parameters
+training:
+  epochs: 300
+  img_size: 640
+  early_stopping:
+    enabled: true
+    patience: 20  # Number of epochs with no improvement to wait before stopping
+    min_delta: 0.0001  # Minimum change to qualify as improvement
+  pretrained: false  # Must be false as per requirements
+  name_format: "${USERNAME}${YY}w${WW}${SUFFIX}"  # Runtime variables are in ${VAR} format
+
+# Hyperparameter optimization
+hyperparameter_optimization:
+  enabled: true
+  method: "optuna"  # Optimization method (optuna, ray)
+  trials: 20  # Number of optimization trials
+  params:
+    learning_rate:
+      min: 0.0001
+      max: 0.01
+    momentum:
+      min: 0.8
+      max: 0.99
+    weight_decay:
+      min: 0.0001
+      max: 0.01
+    subdivisions: [1, 2, 4, 8]  # List of possible values
+
+# Label conversion settings
+label_conversion:
+  source_format: "supervise_ly"
+  target_format: "darknet_txt"
+  standard_labels_path: "./src/label_conversion/standard_labels.yaml"
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  tensorboard: true
+  save_best_only: true
+  checkpoint_interval: 10  # Save a checkpoint every N epochs

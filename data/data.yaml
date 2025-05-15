@@ -1,0 +1,46 @@
+# Data configuration for YOLOv8 training
+
+# Path to training and validation datasets - these should be relative paths
+train: ${DATASET_ROOT}/train/images
+val: ${DATASET_ROOT}/valid/images
+
+# Number of classes and their names
+nc: 5
+names:
+  0: blue
+  1: big_orange
+  2: orange
+  3: unknown
+  4: yellow
+
+# Dataset description
+description: "FSOCO Dataset with the 5 cone classes for traffic cone detection"
+
+# Augmentation settings
+augmentations:
+  noise:
+    enabled: true
+    gaussian_std: 0.03
+    salt_pepper_prob: 0.01
+  
+  distortion:
+    enabled: true
+    barrel_factor: 0.2
+    pincushion_factor: 0.1
+  
+  distance_simulation:
+    enabled: true
+    min_scale: 0.5
+    max_scale: 1.5
+  
+  motion_blur:
+    enabled: true
+    kernel_size: 7
+    angle_range: [-45, 45]
+  
+  occlusion:
+    enabled: true
+    max_area_percentage: 0.20
+
+# Split ratio for creating validation set from training data if not already split
+split_ratio: 0.2

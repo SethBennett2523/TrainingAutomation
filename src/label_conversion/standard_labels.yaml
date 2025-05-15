@@ -1,0 +1,51 @@
+# Standard Labels Definition for Cone Detection
+# This file defines the standard internal format for cone labels
+
+# Format version
+version: 1.0
+
+# Standard coordinate system: [x_min, y_min, width, height]
+# All coordinates are normalized to [0-1] range
+coordinate_format: "xywhNormalized"
+
+# Classes definition
+classes:
+  0:
+    name: "blue"
+    description: "Blue cone"
+    color: [0, 0, 255]  # RGB
+  1:
+    name: "big_orange"
+    description: "Large orange cone"
+    color: [255, 128, 0]  # RGB
+  2:
+    name: "orange"
+    description: "Regular orange cone"
+    color: [255, 165, 0]  # RGB
+  3:
+    name: "unknown"
+    description: "Unidentified cone type"
+    color: [128, 128, 128]  # RGB
+  4:
+    name: "yellow"
+    description: "Yellow cone"
+    color: [255, 255, 0]  # RGB
+
+# Standard label format structure
+# Each label should contain:
+# - class_id: Integer ID matching the classes above
+# - class_name: String name of the class
+# - bbox: Array of [x_min, y_min, width, height] normalized to [0-1]
+# - confidence: Optional confidence score (0-1)
+# - attributes: Optional additional attributes
+
+example_label:
+  - class_id: 0
+    class_name: "blue"
+    bbox: [0.1, 0.2, 0.05, 0.1]  # x_min, y_min, width, height (normalized)
+    confidence: 0.95  # optional
+    attributes: {}  # optional additional data
+  - class_id: 2
+    class_name: "orange"
+    bbox: [0.5, 0.6, 0.04, 0.08]
+    confidence: 0.87

@@ -25,3 +25,9 @@ wmi>=1.5.1; platform_system == "Windows"
 # Linux AMD GPU support packages (when ROCm is needed)
 # Note: ROCm PyTorch should be installed separately using AMD's instructions
 # https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html
+
+# Testing dependencies
+pytest>=7.3.1
+pytest-cov>=4.1.0
+flake8>=6.0.0
+mypy>=1.3.0

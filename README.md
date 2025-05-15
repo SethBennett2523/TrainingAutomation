@@ -182,16 +182,24 @@ This project follows specific coding standards to maintain consistency.
 
 ### British English
 
-For the sake of consistency, only one language standard should be used throughout the codebase and documentation. This project was developed for UWE-AI, UWE is in England, ergo British English
+For the sake of consistency, only one language standard should be used throughout the codebase and documentation. This project was developed for UWE-AI, UWE is in England, ergo British English.
 
-- Always use British English spelling in comments, docstrings, and user-facing strings
+- Always use British English spelling in comments, docstrings, and user-facing strings wherever possible
 - Examples:
   - "colour" instead of "color"
-  - "optimisation" instead of "optimization"
+  - "optimisation" instead of "optimization" 
   - "centre" instead of "center"
   - "visualise" instead of "visualize"
 
-Pull requests will be closed if arguments, standard output, methods, or the content of docstrings are spelt incorrectly.
+#### Function Over Form Exception
+
+- When working with existing method names, class names, or libraries that use American or other non-english spellings, use the defined spelling in code:
+  - If calling a method named `initialize_model()`, use that exact spelling in your code
+  - If extending a class with `ColorManager`, maintain that spelling
+  - Comments and documentation about such methods should still use British spelling
+  - Example: `model.initialize_model()  # Initialises the model with optimised parameters`
+
+Pull requests will be closed if arguments, standard output, methods, or the content of docstrings are spelt incorrectly according to these rules.
 
 ### Code Organization
 

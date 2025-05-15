@@ -8,6 +8,7 @@ import yaml
 import numpy as np
 from PIL import Image
 import cv2
+from unittest.mock import patch, MagicMock
 
 # Add the parent directory to the path so we can import the modules under test
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -173,6 +174,26 @@ class TestAugmentations(unittest.TestCase):
         
         for file in expected_files:
             self.assertTrue(os.path.exists(os.path.join(vis_dir, file)))
+
+    @patch('albumentations.MotionBlur')
+    def test_apply_single_augmentation_motion_blur(self, mock_motion_blur):
+        """Test applying motion blur augmentation."""
+        # Setup mock for MotionBlur
+        mock_instance = MagicMock()
+        mock_instance.apply.return_value = self.test_image.copy()  # Return copy of image to avoid modification
+        mock_motion_blur.return_value = mock_instance
+        
+        # Call the method with fixed parameters
+        aug_manager = AugmentationManager()
+        result = aug_manager.apply_single_augmentation(
+            image=self.test_image,
+            aug_type="motion_blur",
+            params={"blur_limit": 7}
+        )
+        
+        # Verify results
+        mock_motion_blur.assert_called_once_with(blur_limit=7)
+        self.assertEqual(result.shape, self.test_image.shape)
 
 
 class TestDataset(unittest.TestCase):

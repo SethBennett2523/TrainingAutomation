@@ -142,9 +142,18 @@ class YoloTrainer:
     
     def initialize_model(self) -> None:
         """
-        Initialize a new YOLOv8m model without pretrained weights.
+        Initialize the YOLOv8 model.
         """
         try:
+            # Check if we're on CPU and adjust batch size
+            if self.hw_manager.device == 'cpu':
+                self.logger.warning("Running on CPU. Reducing batch size to prevent system freeze.")
+                # Get training params first
+                train_params = self.prepare_training_params()
+                # Force small batch size for CPU
+                train_params['batch'] = min(train_params.get('batch', 16), 4)
+                train_params['workers'] = min(train_params.get('workers', 8), 2)
+            
             # Initialize model with YOLOv8m architecture
             self.model = YOLO('yolov8m.yaml')  # This uses the model structure YAML, not pretrained weights
             

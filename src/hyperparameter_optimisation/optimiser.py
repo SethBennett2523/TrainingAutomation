@@ -155,7 +155,7 @@ class HyperparameterOptimiser:
         Set default hyperparameter search spaces if not specified in config.
         """
         self.param_spaces = {
-            'learning_rate': {
+            'lr0': {  # Changed from 'learning_rate' to 'lr0'
                 'type': 'float',
                 'low': 1e-5,
                 'high': 1e-2,
@@ -177,11 +177,11 @@ class HyperparameterOptimiser:
                 'low': 0,
                 'high': 5
             },
-            'batch_size': {
+            'batch': {  # Changed from 'batch_size' to 'batch'
                 'type': 'categorical',
                 'choices': [8, 16, 24, 32]
             },
-            'img_size': {
+            'imgsz': {  # Changed from 'img_size' to 'imgsz'
                 'type': 'categorical',
                 'choices': [512, 640, 768]
             },
@@ -306,25 +306,16 @@ class HyperparameterOptimiser:
     def objective(self, trial: optuna.Trial) -> float:
         """
         Objective function for optimisation.
-        
-        Args:
-            trial: Optuna trial object
-            
-        Returns:
-            Validation metric to optimise (e.g., mAP)
         """
         # Sample hyperparameters
         params = self._sample_params(trial)
         
         # Get hardware-optimised params
-        hw_params = self.hw_manager.get_training_params(image_size=params.get('img_size', 640))
+        hw_params = self.hw_manager.get_training_params(image_size=params.get('imgsz', 640))  # Updated from img_size
         
-        # If batch_size is not sampled, use hardware-optimised value
-        if 'batch_size' not in params:
+        # If batch is not sampled, use hardware-optimised value
+        if 'batch' not in params:
             params['batch'] = hw_params['batch_size']
-        else:
-            # Make sure batch_size is named according to YOLOv8 expectations
-            params['batch'] = params.pop('batch_size')
         
         # Use hardware-optimised workers
         params['workers'] = hw_params['workers']

@@ -186,8 +186,7 @@ For the sake of consistency, only one language standard should be used throughou
 
 - Always use British English spelling in comments, docstrings, and user-facing strings wherever possible
 - Examples:
-  - "colour" instead of "color"
-  - "optimisation" instead of "optimization" 
+  - "optimisation" instead of "optimization"
   - "centre" instead of "center"
   - "visualise" instead of "visualize"
 

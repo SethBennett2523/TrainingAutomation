@@ -74,7 +74,7 @@ def parse_arguments() -> argparse.Namespace:
     
     # Main operation mode
     parser.add_argument('--mode', type=str, default='train',
-                        choices=['train', 'optimise', 'validate', 'export'],
+                        choices=['train', 'optimise', 'validate', 'export', 'convert'], 
                         help="Operation mode")
     
     # Configuration paths
@@ -101,6 +101,8 @@ def parse_arguments() -> argparse.Namespace:
                         help="Device to use (overrides auto-detection)")
     parser.add_argument('--workers', type=int, default=None,
                         help="Number of workers for data loading")
+    parser.add_argument('--empirical', action='store_true',
+                        help="Use empirical benchmarking to find optimal settings")
     
     # Hyperparameter optimisation
     parser.add_argument('--trials', type=int, default=25,
@@ -129,8 +131,31 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--log-dir', type=str, default='logs',
                         help="Directory for log files")
     
+    # Label conversion options
+    parser.add_argument('--source-format', type=str, default='supervisely',
+                        choices=['supervisely', 'coco', 'voc', 'yolo'],
+                        help="Source annotation format")
+    parser.add_argument('--target-format', type=str, default='darknet',
+                        choices=['darknet', 'coco', 'yolo'],
+                        help="Target annotation format")
+    parser.add_argument('--annotations-dir', type=str, default=None,
+                        help="Directory containing source annotations")
+    parser.add_argument('--labels-dir', type=str, default=None,
+                        help="Output directory for converted labels (default: DATASET_ROOT/labels)")
+    
     return parser.parse_args()
 
+
+def expand_env_vars(config):
+    """Recursively expand environment variables in config values."""
+    if isinstance(config, dict):
+        return {k: expand_env_vars(v) for k, v in config.items()}
+    elif isinstance(config, list):
+        return [expand_env_vars(i) for i in config]
+    elif isinstance(config, str):
+        return os.path.expandvars(config)
+    else:
+        return config
 
 def prepare_environment(args: argparse.Namespace) -> Dict:
     """
@@ -145,11 +170,20 @@ def prepare_environment(args: argparse.Namespace) -> Dict:
     # Set up file I/O
     file_io = FileIO()
     
-    # Load configuration files
+    # Load configuration file
     config_path = file_io.resolve_path(args.config)
-    data_path = file_io.resolve_path(args.data)
-    
     config = file_io.load_yaml(config_path)
+    # Expand environment variables
+    config = expand_env_vars(config)
+    
+    # Use data path from command line or from config
+    if args.data:
+        data_path = file_io.resolve_path(args.data)
+    else:
+        # Get data path from config
+        data_yaml_path = config.get('paths', {}).get('dataset', {}).get('data_yaml', './data/data.yaml')
+        data_path = file_io.resolve_path(data_yaml_path)
+    
     data_config = file_io.load_yaml(data_path)
     
     # Apply command-line overrides to configuration
@@ -228,20 +262,6 @@ def train_model(args: argparse.Namespace, env: Dict) -> None:
     logger.info("Starting model training")
     
     try:
-        # Create dataset manager
-        dataset_manager = DatasetManager(
-            data_yaml_path=env['data_path'],
-            config=env['data_config'],
-            batch_size=env['hw_manager'].calculate_optimal_batch_size(),
-            workers=env['hw_manager'].calculate_optimal_workers(),
-            img_size=env['config'].get('training', {}).get('img_size', 640)
-        )
-        
-        # Create datasets and data loaders
-        logger.info("Preparing datasets")
-        train_dataset, val_dataset = dataset_manager.create_datasets()
-        
-        # Create trainer
         logger.info("Initialising trainer")
         trainer = YoloTrainer(
             config_path=env['config_path'],
@@ -250,8 +270,24 @@ def train_model(args: argparse.Namespace, env: Dict) -> None:
             verbose=args.verbose
         )
         
+        # Get hardware-optimized parameters
+        if args.empirical:
+            logger.info("Running empirical benchmarking to find optimal training parameters")
+            optimal_params = trainer.hw_manager.find_optimal_training_params(
+                data_path=env['data_path'],
+                img_size=args.img_size or 640,
+                save_results=True
+            )
+            logger.info(f"Empirical benchmarking complete. Using batch={optimal_params['batch_size']}, workers={optimal_params['workers']}")
+            
+            # Override parameters with empirical results
+            if not args.batch:  # Only override if not explicitly set by user
+                args.batch = optimal_params['batch_size']
+            if not args.workers:  # Only override if not explicitly set by user
+                args.workers = optimal_params['workers']
+        
         # Initialize model
-        trainer.initialise_model()
+        trainer.initialize_model()
         
         # Train model
         logger.info("Starting training")
@@ -388,6 +424,124 @@ def export_model(args: argparse.Namespace, env: Dict) -> None:
         sys.exit(1)
 
 
+def convert_labels(args: argparse.Namespace, env: Dict) -> None:
+    """
+    Convert labels between different annotation formats.
+    
+    Args:
+        args: Command-line arguments
+        env: Environment information
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting label conversion from {args.source_format} to {args.target_format}")
+    
+    try:
+        # Get class names from data.yaml
+        data_config = env['data_config']
+        logger.debug(f"Data config keys: {list(data_config.keys())}")
+        
+        if 'names' in data_config:
+            logger.debug(f"Names in data_config: {data_config['names']}")
+        else:
+            logger.debug("No 'names' key in data_config!")
+            
+        # Extract class names in order
+        class_names = []
+        if 'names' in data_config:
+            class_count = data_config.get('nc', 0)
+            for i in range(class_count):
+                # Try both integer and string keys
+                class_name = data_config['names'].get(i) or data_config['names'].get(str(i))
+                if class_name:
+                    class_names.append(class_name)
+        
+        if not class_names:
+            logger.error("No class names found in data.yaml")
+            sys.exit(1)
+        
+        logger.info(f"Found {len(class_names)} classes: {', '.join(class_names)}")
+        
+        # Import the converters
+        from src.label_conversion.convert import convert_fsoco_dataset
+        from src.label_conversion.supervise_ly_converter import SuperviseLyConverter
+        from src.label_conversion.darknet_txt_converter import DarknetTxtConverter
+        
+        # Create converter instances
+        source_converter = SuperviseLyConverter()
+        target_converter = DarknetTxtConverter()
+        
+        # OVERRIDE: Directly set class_name_to_id mappings from data.yaml
+        # This ensures we're using the correct class definitions regardless of standard_labels.yaml
+        source_converter.class_name_to_id = {}
+        for i, class_name in enumerate(class_names):
+            source_converter.class_name_to_id[class_name] = i
+            logger.info(f"Override: Mapped class '{class_name}' to ID {i}")
+        
+        # OVERRIDE: Update class name mapping for common FSOCO variants
+        source_converter.class_name_mapping = {
+            'blue_cone': 'blue',
+            'yellow_cone': 'yellow',
+            'orange_cone': 'orange',
+            'small_orange_cone': 'orange',
+            'large_orange_cone': 'big_orange',
+            'big_orange_cone': 'big_orange',
+            'orange_big_cone': 'big_orange',
+            'unknown_cone': 'unknown',
+        }
+        
+        # Determine input directory (FSOCO dataset root)
+        input_dir = args.annotations_dir
+        if not input_dir:
+            # If no annotations_dir provided, use DATASET_ROOT
+            dataset_root = os.environ.get('DATASET_ROOT')
+            if not dataset_root:
+                logger.error("No DATASET_ROOT environment variable set")
+                sys.exit(1)
+            input_dir = dataset_root
+            logger.info(f"Using DATASET_ROOT as input: {input_dir}")
+        
+        # Determine output directories based on data.yaml paths
+        base_dir = os.path.dirname(env['data_path'])
+        train_path = os.path.join(base_dir, data_config.get('train', ''))
+        val_path = os.path.join(base_dir, data_config.get('val', ''))
+        
+        # Create output directories for images and labels
+        train_images_dir = os.path.join(train_path, 'images')
+        train_labels_dir = os.path.join(train_path, 'labels')
+        val_images_dir = os.path.join(val_path, 'images')
+        val_labels_dir = os.path.join(val_path, 'labels')
+        
+        logger.info(f"Creating output directories")
+        for directory in [train_images_dir, train_labels_dir, val_images_dir, val_labels_dir]:
+            os.makedirs(directory, exist_ok=True)
+            logger.info(f"Created directory: {directory}")
+        
+        # Define split ratio from data.yaml or default to 0.2
+        split_ratio = data_config.get('split_ratio', 0.2)
+        
+        # Process the FSOCO dataset directly using our overridden converters
+        source_converter.process_fsoco_dataset(
+            input_dir=input_dir,
+            train_images_dir=train_images_dir,
+            train_labels_dir=train_labels_dir,
+            val_images_dir=val_images_dir,
+            val_labels_dir=val_labels_dir,
+            target_converter=target_converter,
+            split_ratio=split_ratio,
+            safe_mode=True  # Add this parameter to use single-threaded processing
+        )
+        
+        logger.info("Label conversion completed successfully")
+        
+    except KeyboardInterrupt:
+        logger.info("Conversion interrupted by user. Cleaning up...")
+        # Add any cleanup code here
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Error during label conversion: {e}", exc_info=True)
+        sys.exit(1)
+
+
 def main():
     """
     Main entry point for the application.
@@ -415,6 +569,8 @@ def main():
             validate_model(args, env)
         elif args.mode == 'export':
             export_model(args, env)
+        elif args.mode == 'convert': 
+            convert_labels(args, env)
         else:
             logger.error(f"Unknown mode: {args.mode}")
             sys.exit(1)

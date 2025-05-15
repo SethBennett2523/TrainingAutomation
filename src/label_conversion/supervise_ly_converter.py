@@ -17,19 +17,32 @@ class SuperviseLyConverter(BaseConverter):
     """
     
     def __init__(self, standard_labels_path: str = None):
-        """
-        Initialise the Supervise.ly converter.
-        
-        Args:
-            standard_labels_path: Path to the standard labels YAML file
-        """
+        """Initialize the Supervisely converter."""
         super().__init__(standard_labels_path)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Debug
+        self.logger.info(f"SuperviseLyConverter initialized with standard_labels_path: {standard_labels_path}")
+        self.logger.info(f"Standard labels keys: {list(self.standard_labels.keys())}")
+        
+        self.class_name_to_id = {}
+        
+        # Add name mapping for FSOCO dataset naming conventions
+        self.class_name_mapping = {
+            'blue_cone': 'blue',
+            'yellow_cone': 'yellow',
+            # ... existing mappings ...
+        }
         
         # Create class name to ID mapping for easier lookups
-        self.class_name_to_id = {}
-        for class_id, class_info in self.standard_labels['classes'].items():
-            self.class_name_to_id[class_info['name']] = int(class_id)
+        if 'classes' in self.standard_labels:
+            self.logger.info(f"Classes in standard_labels: {list(self.standard_labels['classes'].keys())}")
+            for class_id, class_info in self.standard_labels['classes'].items():
+                if isinstance(class_info, dict) and 'name' in class_info:
+                    self.class_name_to_id[class_info['name']] = int(class_id)
+                else:
+                    self.logger.error(f"Invalid class info format: {class_info}")
+        else:
+            self.logger.error("No 'classes' key in standard_labels!")
             
     def to_standard_format(self, input_path: str) -> List[Dict]:
         """
@@ -72,7 +85,16 @@ class SuperviseLyConverter(BaseConverter):
             
             # Process each object in the Supervise.ly annotation
             for obj in supervise_data.get('objects', []):
-                class_name = obj.get('classTitle', '').lower()
+                original_class_name = obj.get('classTitle')
+                class_name = original_class_name
+
+                # Apply mapping if available  
+                if class_name in self.class_name_mapping:
+                    mapped_name = self.class_name_mapping[class_name]
+                    self.logger.debug(f"Mapping class name: {class_name} -> {mapped_name}")
+                    class_name = mapped_name
+                else:
+                    self.logger.warning(f"No mapping found for class: {class_name}")
                 
                 # Skip if class is not in our standard labels
                 if class_name not in self.class_name_to_id:
@@ -207,48 +229,70 @@ class SuperviseLyConverter(BaseConverter):
             self.logger.error(f"Error converting to Supervise.ly format: {e}")
             raise
     
-    def _get_image_path_from_annotation(self, annotation_path: str) -> str:
+    def get_image_path_from_annotation(self, annotation_path: str) -> str:
         """
-        Get the corresponding image path from an annotation path.
+        Get the image file path from a Supervisely annotation path.
+        
+        For FSOCO dataset structure, annotations are stored in:
+        - team/ann/image_file.jpg.json
+        - or directly in team/image_file.jpg.json
+        
+        And images are in:
+        - team/img/image_file.jpg
+        - or directly in team/image_file.jpg
         
         Args:
-            annotation_path: Path to the annotation file
+            annotation_path: Path to Supervisely annotation file
             
         Returns:
             Path to the corresponding image file
         """
-        # Supervise.ly format: team/ann/imagename.png.json -> team/img/imagename.png
         try:
-            dir_path = os.path.dirname(annotation_path)
-            file_name = os.path.basename(annotation_path)
+            # Get annotation directory and filename
+            ann_dir = os.path.dirname(annotation_path)
+            json_filename = os.path.basename(annotation_path)
             
-            # Remove .json extension if present
-            if file_name.endswith('.json'):
-                file_name = file_name[:-5]
+            # Check if filename has .jpg.json or similar pattern
+            if json_filename.endswith('.json'):
+                # Remove .json extension
+                img_filename = json_filename[:-5]
                 
-            # Get parent directory (team)
-            team_dir = os.path.dirname(dir_path)
+                # Check for standard FSOCO structure (team/ann/image.jpg.json)
+                if os.path.basename(ann_dir).lower() == 'ann':
+                    # FSOCO structure with annotations in 'ann' subfolder
+                    team_dir = os.path.dirname(ann_dir)
+                    
+                    # Try standard structure first (team/img/image.jpg)
+                    img_dir = os.path.join(team_dir, 'img')
+                    if os.path.isdir(img_dir):
+                        img_path = os.path.join(img_dir, img_filename)
+                        if os.path.exists(img_path):
+                            return img_path
+                    
+                    # Try alternative locations (directly in team dir)
+                    img_path = os.path.join(team_dir, img_filename)
+                    if os.path.exists(img_path):
+                        return img_path
+                else:
+                    # Non-standard structure, try in the same directory as annotation
+                    img_path = os.path.join(ann_dir, img_filename)
+                    if os.path.exists(img_path):
+                        return img_path
+                    
+                    # Try in a parallel 'img' directory
+                    img_dir = os.path.join(os.path.dirname(ann_dir), 'img')
+                    if os.path.isdir(img_dir):
+                        img_path = os.path.join(img_dir, img_filename)
+                        if os.path.exists(img_path):
+                            return img_path
             
-            # Construct image path
-            img_dir = os.path.join(team_dir, 'img')
-            img_path = os.path.join(img_dir, file_name)
-            
-            return img_path
+            # Could not determine image path
+            self.logger.warning(f"Could not determine image path for annotation: {annotation_path}")
+            return None
         except Exception as e:
             self.logger.error(f"Error getting image path: {e}")
             return None
-    
-    def _get_output_filename(self, input_filename: str) -> str:
-        """
-        Generate appropriate output filename for Supervise.ly format.
-        
-        Args:
-            input_filename: Original filename
-            
-        Returns:
-            Output filename
-        """
-        # If converting to Supervise.ly format, append .json if not present
-        if not input_filename.endswith('.json'):
-            return f"{input_filename}.json"
-        return input_filename
+
+    def _is_valid_file(self, filename: str) -> bool:
+        """Check if this is a valid Supervisely annotation file."""
+        return filename.endswith('.json')

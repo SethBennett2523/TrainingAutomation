@@ -172,3 +172,4 @@ class DarknetTxtConverter(BaseConverter):
         except Exception as e:
             self.logger.error(f"Error creating class mapping file: {e}")
             raise
+

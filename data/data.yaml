@@ -1,8 +1,8 @@
 # Data configuration for YOLOv8 training
 
 # Path to training and validation datasets - these should be relative paths
-train: ${DATASET_ROOT}/train/images
-val: ${DATASET_ROOT}/valid/images
+train: FSOCO_dataset/train/
+val: FSOCO_dataset/valid/
 
 # Number of classes and their names
 nc: 5

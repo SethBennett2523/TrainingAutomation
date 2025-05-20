@@ -173,3 +173,45 @@ class DarknetTxtConverter(BaseConverter):
             self.logger.error(f"Error creating class mapping file: {e}")
             raise
 
+    def get_image_path_from_annotation(self, annotation_path: str) -> str:
+        """
+        Get the image file path from a Darknet TXT annotation path.
+        
+        In YOLO/Darknet format, the annotation is a .txt file and 
+        the image file has the same basename but with an image extension.
+        
+        Args:
+            annotation_path: Path to the Darknet annotation file (.txt)
+            
+        Returns:
+            Path to the corresponding image file
+        """
+        try:
+            # Get the directory and filename without extension
+            ann_dir = os.path.dirname(annotation_path)
+            base_name = os.path.splitext(os.path.basename(annotation_path))[0]
+            
+            # Look for common image extensions
+            for ext in ['.jpg', '.jpeg', '.png', '.bmp']:
+                img_path = os.path.join(ann_dir, f"{base_name}{ext}")
+                if os.path.exists(img_path):
+                    return img_path
+                
+            # Try in a parallel 'images' directory
+            img_dir = os.path.join(os.path.dirname(ann_dir), 'images')
+            if os.path.isdir(img_dir):
+                for ext in ['.jpg', '.jpeg', '.png', '.bmp']:
+                    img_path = os.path.join(img_dir, f"{base_name}{ext}")
+                    if os.path.exists(img_path):
+                        return img_path
+            
+            self.logger.warning(f"Could not find image for annotation: {annotation_path}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting image path: {e}")
+            return None
+        
+    def _is_valid_file(self, filename: str) -> bool:
+        """Check if this is a valid Darknet annotation file."""
+        return filename.endswith('.txt')
+

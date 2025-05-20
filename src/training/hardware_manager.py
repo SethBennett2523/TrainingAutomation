@@ -8,6 +8,7 @@ import torch
 import psutil
 import yaml
 from typing import Dict, Optional, Tuple, Union, List
+import time
 
 class HardwareManager:
     """
@@ -460,23 +461,37 @@ class HardwareManager:
         else:
             return torch.device('cpu')
     
-    def get_training_params(self, image_size: int = 640) -> Dict:
+    def get_training_params(self, image_size: int = 640, empirical: bool = False, data_path: str = None) -> Dict:
         """
         Get all hardware-optimized training parameters.
         
         Args:
             image_size: Image size for training
-        
+            empirical: Whether to perform empirical benchmarking
+            data_path: Path to data.yaml file (required if empirical=True)
+            
         Returns:
             Dictionary of optimized training parameters
         """
-        return {
-            'device': self.get_torch_device(),
-            'batch_size': self.calculate_optimal_batch_size(image_size=image_size),
-            'workers': self.calculate_optimal_workers(),
-            'is_gpu': self.device != 'cpu',
-            'device_type': self.device
-        }
+        if empirical and data_path:
+            # Get empirically determined optimal parameters
+            optimal = self.find_optimal_training_params(data_path, image_size)
+            return {
+                'device': self.get_torch_device(),
+                'batch_size': optimal['batch_size'],
+                'workers': optimal['workers'],
+                'is_gpu': self.device != 'cpu',
+                'device_type': self.device
+            }
+        else:
+            # Use heuristic optimization
+            return {
+                'device': self.get_torch_device(),
+                'batch_size': self.calculate_optimal_batch_size(image_size=image_size),
+                'workers': self.calculate_optimal_workers(),
+                'is_gpu': self.device != 'cpu',
+                'device_type': self.device
+            }
     
     def print_hardware_summary(self):
         """
@@ -501,6 +516,303 @@ class HardwareManager:
         print(f"Workers: {training_params['workers']}")
         print(f"Device: {training_params['device']}")
         print("-----------------\n")
+    
+    def benchmark_batch_size(self, 
+                             data_path: str, 
+                             img_size: int = 640, 
+                             min_batch: int = 1, 
+                             max_batch: int = 64, 
+                             iterations: int = 3) -> Dict:
+        """
+        Benchmark different batch sizes and measure throughput and memory usage.
+        
+        Args:
+            data_path: Path to data.yaml file
+            img_size: Image size for training
+            min_batch: Minimum batch size to test
+            max_batch: Maximum batch size to test
+            iterations: Number of iterations to run for each batch size
+            
+        Returns:
+            Dictionary with optimal batch size and benchmark results
+        """
+        self.logger.info(f"Benchmarking batch sizes from {min_batch} to {max_batch} on {self.device}")
+        
+        # Import here to avoid circular imports
+        try:
+            from ultralytics import YOLO
+        except ImportError:
+            self.logger.error("Failed to import YOLO. Is ultralytics installed?")
+            return {'optimal_batch': self.calculate_optimal_batch_size(image_size=img_size)}
+        
+        import torch
+        
+        results = []
+        if self.device == 'cuda':
+            max_memory = torch.cuda.get_device_properties(0).total_memory
+        else:
+            max_memory = 0
+        
+        # Determine batch sizes to test (use exponential growth for efficiency)
+        if max_batch > 32:
+            batch_sizes = [min_batch] + [b for b in range(2, 9, 2)] + [b for b in range(10, 33, 4)] + [b for b in range(36, max_batch + 1, 8)]
+        else:
+            batch_sizes = [b for b in range(min_batch, max_batch + 1, 2)]
+        
+        # Ensure max_batch is included
+        if max_batch not in batch_sizes:
+            batch_sizes.append(max_batch)
+        
+        for batch_size in batch_sizes:
+            try:
+                torch.cuda.empty_cache() if self.device == 'cuda' else None
+                model = YOLO('yolov8n.yaml')  # Use small model for benchmarking
+                
+                self.logger.info(f"Testing batch size {batch_size}...")
+                
+                # Warm-up - FIXED: removed invalid parameters
+                model.train(data=data_path, imgsz=img_size, epochs=1, batch=batch_size, 
+                           device=self.device, verbose=False, val=False, plots=False, 
+                           save=False)
+                
+                # Benchmark - FIXED: removed invalid parameters
+                start_time = time.time()
+                for i in range(iterations):
+                    model.train(data=data_path, imgsz=img_size, epochs=1, batch=batch_size, 
+                               device=self.device, verbose=False, val=False, plots=False, 
+                               save=False)
+                duration = (time.time() - start_time) / iterations
+                
+                # Memory usage
+                if self.device == 'cuda':
+                    used_memory = torch.cuda.max_memory_allocated()
+                    memory_percent = 100 * used_memory / max_memory
+                else:
+                    used_memory = 0
+                    memory_percent = 0
+                
+                # Calculate images per second (estimate from a small number of batches)
+                images_per_sec = 100 * batch_size / duration  # Assuming ~100 batches in an epoch
+                
+                results.append({
+                    'batch_size': batch_size,
+                    'duration': duration,
+                    'images_per_sec': images_per_sec,
+                    'memory_used': used_memory,
+                    'memory_percent': memory_percent
+                })
+                
+                self.logger.info(f"Batch {batch_size}: {images_per_sec:.2f} img/s, {memory_percent:.2f}% VRAM")
+                
+                del model
+                torch.cuda.empty_cache() if self.device == 'cuda' else None
+                
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    self.logger.warning(f"Batch size {batch_size} caused OOM error.")
+                    break
+                else:
+                    self.logger.error(f"Error with batch size {batch_size}: {e}")
+                    break
+        
+        # Find optimal batch size (highest throughput with memory under 90%)
+        valid_results = [r for r in results if r.get('memory_percent', 0) < 90]
+        if valid_results:
+            optimal = max(valid_results, key=lambda x: x['images_per_sec'])
+            self.logger.info(f"Optimal batch size: {optimal['batch_size']} "
+                           f"({optimal['images_per_sec']:.2f} img/s, "
+                           f"{optimal['memory_percent']:.1f}% VRAM)")
+            return {'optimal_batch': optimal['batch_size'], 'results': results}
+        elif results:
+            # If all results exceed 90% memory, choose the one with highest throughput
+            optimal = max(results, key=lambda x: x['images_per_sec'])
+            self.logger.info(f"All batch sizes use >90% VRAM. Best: {optimal['batch_size']}")
+            return {'optimal_batch': optimal['batch_size'], 'results': results}
+        else:
+            self.logger.error("No valid results found")
+            return {'optimal_batch': self.calculate_optimal_batch_size(image_size=img_size)}
+    
+    def benchmark_workers(self, 
+                         data_path: str, 
+                         img_size: int = 640, 
+                         batch_size: int = None,
+                         min_workers: int = 0, 
+                         max_workers: int = None,
+                         iterations: int = 3) -> Dict:
+        """
+        Benchmark different worker counts and measure throughput.
+        
+        Args:
+            data_path: Path to data.yaml file
+            img_size: Image size for training
+            batch_size: Batch size to use for testing (if None, use calculated optimal)
+            min_workers: Minimum worker count to test
+            max_workers: Maximum worker count to test
+            iterations: Number of iterations to run for each worker count
+            
+        Returns:
+            Dictionary with optimal worker count and benchmark results
+        """
+        # Set default batch size if not provided
+        if batch_size is None:
+            batch_size = self.calculate_optimal_batch_size(image_size=img_size)
+        
+        # Set default max_workers if not provided
+        if max_workers is None:
+            cpu_count = psutil.cpu_count(logical=True)
+            max_workers = min(cpu_count, 16) if cpu_count else 8
+        
+        self.logger.info(f"Benchmarking workers from {min_workers} to {max_workers} with batch size {batch_size}")
+        
+        # Import here to avoid circular imports
+        try:
+            from ultralytics import YOLO
+            import torch
+        except ImportError:
+            self.logger.error("Failed to import YOLO. Is ultralytics installed?")
+            return {'optimal_workers': self.calculate_optimal_workers()}
+        
+        results = []
+        workers_list = list(range(min_workers, max_workers + 1, 1))
+        
+        for workers in workers_list:
+            try:
+                torch.cuda.empty_cache() if self.device == 'cuda' else None
+                model = YOLO('yolov8n.yaml')  # Use small model for benchmarking
+                
+                self.logger.info(f"Testing workers={workers}...")
+                
+                # Warm-up
+                model.train(data=data_path, imgsz=img_size, epochs=1, batch=batch_size, 
+                            device=self.device, workers=workers, verbose=False, val=False, 
+                            plots=False, save=False)
+                
+                # Benchmark
+                start_time = time.time()
+                for i in range(iterations):
+                    model.train(data=data_path, imgsz=img_size, epochs=1, batch=batch_size, 
+                               device=self.device, workers=workers, verbose=False, val=False, 
+                               plots=False, save=False)
+                duration = (time.time() - start_time) / iterations
+                
+                # Calculate images per second (estimate from a small number of batches)
+                images_per_sec = 100 * batch_size / duration  # Assuming ~100 batches in an epoch
+                
+                results.append({
+                    'workers': workers,
+                    'duration': duration,
+                    'images_per_sec': images_per_sec,
+                })
+                
+                self.logger.info(f"Workers {workers}: {images_per_sec:.2f} img/s")
+                
+                del model
+                torch.cuda.empty_cache() if self.device == 'cuda' else None
+                
+            except Exception as e:
+                self.logger.error(f"Error with workers={workers}: {e}")
+                continue
+        
+        # Find optimal worker count (highest throughput)
+        if results:
+            optimal = max(results, key=lambda x: x['images_per_sec'])
+            self.logger.info(f"Optimal workers: {optimal['workers']} "
+                           f"({optimal['images_per_sec']:.2f} img/s)")
+            return {'optimal_workers': optimal['workers'], 'results': results}
+        else:
+            self.logger.error("No valid results found")
+            return {'optimal_workers': self.calculate_optimal_workers()}
+    
+    def find_optimal_training_params(self, 
+                               data_path: str, 
+                               img_size: int = 640,
+                               max_batch: int = 64,
+                               max_workers: int = None,
+                               save_results: bool = True,
+                               target_model: str = 'yolov8m') -> Dict:
+        """
+        Find optimal training parameters through empirical benchmarking.
+        
+        Args:
+            data_path: Path to data.yaml file
+            img_size: Image size for training
+            max_batch: Maximum batch size to test
+            max_workers: Maximum worker count to test
+            save_results: Whether to save benchmark results to a file
+            target_model: Target model for training (used for batch size adjustment)
+            
+        Returns:
+            Dictionary with optimal training parameters
+        """
+        start_time = time.time()
+        self.logger.info("Starting empirical benchmarking to find optimal training parameters")
+        
+        # First find optimal batch size
+        batch_results = self.benchmark_batch_size(data_path, img_size, max_batch=max_batch)
+        optimal_batch = batch_results['optimal_batch']
+        
+        # Then find optimal worker count using the optimal batch size
+        worker_results = self.benchmark_workers(data_path, img_size, batch_size=optimal_batch, max_workers=max_workers)
+        optimal_workers = worker_results['optimal_workers']
+        
+        # Apply model size adjustment factor
+        model_size_factors = {
+            'yolov8n': 1.0,   # nano (baseline for benchmarking)
+            'yolov8s': 0.75,  # small
+            'yolov8m': 0.5,   # medium
+            'yolov8l': 0.35,  # large
+            'yolov8x': 0.25   # xlarge
+        }
+        
+        # Get adjustment factor for target model, default to 0.5 if unknown
+        size_factor = model_size_factors.get(target_model, 0.5)
+        
+        # Apply size factor to optimal batch size
+        original_batch = optimal_batch
+        optimal_batch = max(1, int(optimal_batch * size_factor))
+        
+        self.logger.info(f"Adjusted batch size from {original_batch} to {optimal_batch} for {target_model}")
+        
+        # Create result summary
+        results = {
+            'optimal_params': {
+                'batch_size': optimal_batch,  # Use adjusted batch size
+                'workers': optimal_workers,
+                'img_size': img_size,
+                'device': self.device,
+                'original_batch': original_batch,  # Store original for reference
+                'adjustment_factor': size_factor
+            },
+            'benchmarks': {
+                'batch_sizes': batch_results.get('results', []),
+                'workers': worker_results.get('results', [])
+            },
+            'hardware': {
+                'device': self.device,
+                'gpu_name': self.gpu_name,
+                'vram_total_gb': self.vram_total / (1024**3) if self.vram_total else 0,
+                'ram_total_gb': self.ram_total / (1024**3)
+            },
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # Save results if requested
+        if save_results:
+            import yaml
+            import os
+            output_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            output_path = os.path.join(output_dir, 'optimal_training_params.yaml')
+            try:
+                with open(output_path, 'w') as f:
+                    yaml.dump(results, f, default_flow_style=False)
+                self.logger.info(f"Saved benchmark results to {output_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to save benchmark results: {e}")
+        
+        elapsed = time.time() - start_time
+        self.logger.info(f"Benchmarking completed in {elapsed:.1f}s. Optimal parameters: batch={optimal_batch}, workers={optimal_workers}")
+        
+        return results['optimal_params']
 
 
 # Example usage

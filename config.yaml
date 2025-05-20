@@ -4,7 +4,8 @@
 paths:
   dataset:
     root: "./data/FSOCO_dataset"
-    unconverted: "./Unconverted FSOCO Dataset/FSOCO_dataset"
+    unconverted: ${DATASET_ROOT}
+    data_yaml: "./data/data.yaml" 
   output:
     models: "./models"
     logs: "./logs"

@@ -5,10 +5,9 @@
 version: 1.0
 
 # Standard coordinate system: [x_min, y_min, width, height]
-# All coordinates are normalized to [0-1] range
-coordinate_format: "xywhNormalized"
+# All coordinates normalized to [0-1]
 
-# Classes definition
+# Class definitions
 classes:
   0:
     name: "blue"
@@ -16,15 +15,15 @@ classes:
     color: [0, 0, 255]  # RGB
   1:
     name: "big_orange"
-    description: "Large orange cone"
-    color: [255, 128, 0]  # RGB
+    description: "Big orange cone"
+    color: [255, 165, 0]  # RGB
   2:
     name: "orange"
-    description: "Regular orange cone"
-    color: [255, 165, 0]  # RGB
+    description: "Orange cone"
+    color: [255, 140, 0]  # RGB
   3:
     name: "unknown"
-    description: "Unidentified cone type"
+    description: "Unknown cone"
     color: [128, 128, 128]  # RGB
   4:
     name: "yellow"

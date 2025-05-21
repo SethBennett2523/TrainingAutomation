@@ -17,9 +17,9 @@ from .hardware_manager import HardwareManager
 
 class YoloTrainer:
     """
-    YOLOv8 trainer with hardware optimization and early stopping.
+    YOLO trainer with hardware optimization and early stopping.
     
-    This class handles the training of YOLOv8m models with hardware optimization,
+    This class handles the training of YOLO models (YOLOv8 and YOLOv11) with hardware optimization,
     early stopping, and proper logging.
     """
     
@@ -28,20 +28,22 @@ class YoloTrainer:
         config_path: str,
         data_yaml_path: str,
         output_dir: str = None,
-        verbose: bool = True
+        verbose: bool = True,
+        model_type: str = 'yolov8m'
     ):
         """
         Initialize the YOLOv8 trainer.
-        
-        Args:
+          Args:
             config_path: Path to the main configuration file
             data_yaml_path: Path to the data YAML file for training
             output_dir: Directory to save outputs
             verbose: Whether to log detailed information
+            model_type: YOLO model type to use (e.g., 'yolov8m', 'yolov11s', 'yolov11m', 'yolov11l')
         """
         self.config_path = config_path
         self.data_yaml_path = data_yaml_path
         self.verbose = verbose
+        self.model_type = model_type
         
         # Setup logging
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -133,43 +135,41 @@ class YoloTrainer:
             timestamp = int(time.time()) % 10000  # Last 4 digits of timestamp
             suffix = f"_{timestamp}"
             name = name.replace("${SUFFIX}", suffix)
-        
-        # Ensure the name is filesystem-safe
+          # Ensure the name is filesystem-safe
         name = name.replace(" ", "_")
         name = ''.join(c for c in name if c.isalnum() or c in "_-.")
         
         return name
-    
-    def initialize_model(self) -> None:
-        """
-        Initialize the YOLOv8 model.
-        """
-        try:
-            # Check if we're on CPU and adjust batch size
-            if self.hw_manager.device == 'cpu':
-                self.logger.warning("Running on CPU. Reducing batch size to prevent system freeze.")
-                # Get training params first
-                train_params = self.prepare_training_params()
-                # Force small batch size for CPU
-                train_params['batch'] = min(train_params.get('batch', 16), 4)
-                train_params['workers'] = min(train_params.get('workers', 8), 2)
-            
-            # Initialize model with YOLOv8m architecture
-            self.model = YOLO('yolov8m.yaml')  # This uses the model structure YAML, not pretrained weights
-            
-            if self.verbose:
-                self.logger.info(f"Initialized YOLOv8m model with random weights (no pretrained)")
         
+    def initialize_model(self) -> None:
+        """Initialize the YOLO model."""
+        try:
+            # Check if we're dealing with a YOLOv8 built-in model
+            if self.model_type == 'yolov8m':
+                # For YOLOv8m, use the built-in model
+                self.model = YOLO(self.model_type)
+            else:
+                # For YOLOv11 models, use the custom model config
+                model_config = self.config.get('models', {}).get(self.model_type, {}).get('config_path')
+                if model_config:
+                    # Resolve environment variables and path variables
+                    model_config = model_config.replace('${paths.output.model_configs}', 
+                                                        os.path.join(os.path.dirname(self.config_path), 'data/model_config'))
+                    self.model = YOLO(model_config)
+                else:
+                    self.logger.error(f"No model configuration found for {self.model_type}")
+                    raise ValueError(f"No model configuration found for {self.model_type}")
+                    
+            if self.verbose:
+                self.logger.info(f"Initialized {self.model_type} model with random weights (no pretrained)")
+                
         except Exception as e:
             self.logger.error(f"Failed to initialize model: {e}")
             raise
     
     def prepare_training_params(self) -> Dict:
         """
-        Prepare the training parameters, combining configuration with hardware optimization.
-        
-        Returns:
-            Dictionary of training parameters
+        Prepare training parameters - apply same logic regardless of model type
         """
         # Get hardware-optimized parameters
         hw_params = self.hw_manager.get_training_params(
@@ -179,9 +179,9 @@ class YoloTrainer:
         # Get training configuration
         training_config = self.config.get('training', {})
         
-        # Initialize training parameters with hardware-optimized values
+        # Same parameters for all models
         train_params = {
-            'data': self.data_yaml_path,  # Path to data.yaml
+            'data': self.data_yaml_path,
             'epochs': training_config.get('epochs', 300),
             'imgsz': training_config.get('img_size', 640),
             'batch': hw_params.get('batch_size', 16),
@@ -190,22 +190,12 @@ class YoloTrainer:
             'name': self.run_name,
             'project': self.output_dir,
             'exist_ok': True,
-            'pretrained': False,  # Ensure no pretrained weights as per requirements
+            'pretrained': False,
             'verbose': self.verbose,
             'save': True,
             'save_period': self.config.get('logging', {}).get('checkpoint_interval', 10),
-            'patience': 0,  # Disable built-in early stopping, we'll use our custom implementation
+            'patience': training_config.get('early_stopping', {}).get('patience', 0)
         }
-        
-        # Add hyperparameter optimization parameters if enabled
-        hp_opt = self.config.get('hyperparameter_optimization', {})
-        if hp_opt.get('enabled', True):
-            # Add optimized hyperparameters if available
-            # (This would typically come from a hyperparameter optimization run)
-            pass
-        
-        if self.verbose:
-            self.logger.info(f"Training parameters: {train_params}")
         
         return train_params
     
@@ -363,8 +353,7 @@ class YoloTrainer:
         try:
             # Export the model
             result = self.model.export(format=format, imgsz=self.config.get('training', {}).get('img_size', 640))
-            
-            # Copy the exported model to our run directory
+              # Copy the exported model to our run directory
             if result and hasattr(result, 'export_dir') and result.export_dir:
                 src_path = result.export_dir
                 if os.path.exists(src_path):

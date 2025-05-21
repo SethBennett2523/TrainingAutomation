@@ -34,7 +34,8 @@ class HyperparameterOptimiser:
         n_trials: int = 25,
         timeout: int = None,
         n_jobs: int = -1,
-        verbose: bool = True
+        verbose: bool = True,
+        model_type: str = 'yolov8m'
     ):
         """
         Initialise the hyperparameter optimiser.
@@ -47,13 +48,14 @@ class HyperparameterOptimiser:
             n_trials: Maximum number of trials to run
             timeout: Maximum seconds for optimisation (None for no timeout)
             n_jobs: Number of parallel jobs (-1 for hardware-based auto-detection)
-            verbose: Whether to log detailed information
+            verbose: Whether to log detailed information            model_type: YOLO model type to use (e.g., 'yolov8m', 'yolov11s', 'yolov11m', 'yolov11l')
         """
         self.config_path = config_path
         self.data_yaml_path = data_yaml_path
         self.n_trials = n_trials
         self.timeout = timeout
         self.verbose = verbose
+        self.model_type = model_type  # Store the model type
         
         # Setup logging
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -68,11 +70,10 @@ class HyperparameterOptimiser:
             output_dir = self.config.get('paths', {}).get('output', {}).get('optimisation', 'optimisation')
         self.output_dir = Path(output_dir)
         os.makedirs(self.output_dir, exist_ok=True)
-        
-        # Generate study name if not provided
+          # Generate study name if not provided
         if study_name is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            study_name = f"yolov8m_opt_{timestamp}"
+            study_name = f"{self.model_type}_opt_{timestamp}"
         self.study_name = study_name
         
         # Setup storage
@@ -329,13 +330,13 @@ class HyperparameterOptimiser:
         
         self.logger.info(f"Starting trial {trial.number} with params: {params}")
         
-        try:
-            # Initialize trainer
+        try:            # Initialize trainer
             trainer = YoloTrainer(
                 config_path=self.config_path,
                 data_yaml_path=self.data_yaml_path,
                 output_dir=trial_dir,
-                verbose=self.verbose
+                verbose=self.verbose,
+                model_type=self.model_type
             )
             
             # Initialize model
@@ -639,7 +640,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     import argparse
-    
     parser = argparse.ArgumentParser(description="YOLOv8 Hyperparameter Optimisation")
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to config file')
     parser.add_argument('--data', type=str, default='data/data.yaml', help='Path to data YAML file')
@@ -647,10 +647,11 @@ if __name__ == "__main__":
     parser.add_argument('--jobs', type=int, default=-1, help='Number of parallel jobs (-1 for auto)')
     parser.add_argument('--output', type=str, default=None, help='Output directory')
     parser.add_argument('--study', type=str, default=None, help='Study name')
+    parser.add_argument('--model', type=str, default='yolov8m', choices=['yolov8m', 'yolov11s', 'yolov11m', 'yolov11l'],
+                        help='YOLO model to use')
     
     args = parser.parse_args()
-    
-    # Create optimiser
+      # Create optimiser
     optimiser = HyperparameterOptimiser(
         config_path=args.config,
         data_yaml_path=args.data,
@@ -658,7 +659,8 @@ if __name__ == "__main__":
         study_name=args.study,
         n_trials=args.trials,
         n_jobs=args.jobs,
-        verbose=True
+        verbose=True,
+        model_type=args.model
     )
     
     # Run optimisation

@@ -9,6 +9,7 @@ paths:
   output:
     models: "./models"
     logs: "./logs"
+    model_configs: "./data/model_config"  # Directory for model YAML configurations
   
 # Hardware configuration
 hardware:
@@ -21,6 +22,8 @@ hardware:
 
 # Training parameters
 training:
+  # Default model to use if not specified in command line
+  default_model: "yolov8m"  # Valid options: yolov8m, yolov11s, yolov11m, yolov11l
   epochs: 300
   img_size: 640
   early_stopping:
@@ -28,7 +31,22 @@ training:
     patience: 20  # Number of epochs with no improvement to wait before stopping
     min_delta: 0.0001  # Minimum change to qualify as improvement
   pretrained: false  # Must be false as per requirements
-  name_format: "${USERNAME}${YY}w${WW}${SUFFIX}"  # Runtime variables are in ${VAR} format
+  name_format: "${USERNAME}${YY}w${WW}_${MODEL}${SUFFIX}"  # Runtime variables with model type
+
+# Model-specific parameters
+models:
+  yolov8m:
+    config_path: null  # Uses built-in ultralytics model
+    default_img_size: 640
+  yolov11s:
+    config_path: "${paths.output.model_configs}/yolov11s.yaml"
+    default_img_size: 640
+  yolov11m:
+    config_path: "${paths.output.model_configs}/yolov11m.yaml"
+    default_img_size: 640
+  yolov11l:
+    config_path: "${paths.output.model_configs}/yolov11l.yaml"
+    default_img_size: 640
 
 # Hyperparameter optimization
 hyperparameter_optimization:

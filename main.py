@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-AutoTrainer: Automated YOLOv8 model training system.
+AutoTrainer: Automated YOLO model training system.
 
 This module provides a command-line interface for training, validating,
-and optimising YOLOv8 models for cone detection with hardware-aware
+and optimising YOLO models (YOLOv8 and YOLOv11) for cone detection with hardware-aware
 optimisations for both NVIDIA and AMD GPUs.
 """
 
@@ -86,14 +86,16 @@ def parse_arguments() -> argparse.Namespace:
     # Output directory
     parser.add_argument('--output', type=str, default=None,
                         help="Output directory (default from config)")
-    
-    # Training parameters
+      # Training parameters
     parser.add_argument('--epochs', type=int, default=None,
                         help="Number of training epochs (overrides config)")
     parser.add_argument('--batch', type=int, default=None,
                         help="Batch size (overrides auto-detection)")
     parser.add_argument('--img-size', type=int, default=None,
                         help="Image size for training (overrides config)")
+    parser.add_argument('--model', type=str, default='yolov8m',
+                        choices=['yolov8m', 'yolov11s', 'yolov11m', 'yolov11l'],
+                        help="YOLO model architecture to use for training")
     
     # Hardware options
     parser.add_argument('--device', type=str, default=None,
@@ -252,31 +254,32 @@ def prepare_environment(args: argparse.Namespace) -> Dict:
 
 def train_model(args: argparse.Namespace, env: Dict) -> None:
     """
-    Train a YOLOv8 model.
+    Train a YOLO model (YOLOv8 or YOLOv11).
     
     Args:
         args: Command-line arguments
         env: Environment information
     """
     logger = logging.getLogger(__name__)
-    logger.info("Starting model training")
+    logger.info(f"Starting model training with {args.model}")
     
     try:
-        logger.info("Initialising trainer")
+        logger.info("Initializing trainer")
         trainer = YoloTrainer(
             config_path=env['config_path'],
             data_yaml_path=env['data_path'],
             output_dir=env['output_models_dir'],
-            verbose=args.verbose
+            verbose=args.verbose,
+            model_type=args.model
         )
-        
-        # Get hardware-optimized parameters
+          # Get hardware-optimized parameters
         if args.empirical:
             logger.info("Running empirical benchmarking to find optimal training parameters")
             optimal_params = trainer.hw_manager.find_optimal_training_params(
                 data_path=env['data_path'],
                 img_size=args.img_size or 640,
-                save_results=True
+                save_results=True,
+                target_model=args.model
             )
             logger.info(f"Empirical benchmarking complete. Using batch={optimal_params['batch_size']}, workers={optimal_params['workers']}")
             
@@ -327,8 +330,7 @@ def optimise_hyperparameters(args: argparse.Namespace, env: Dict) -> None:
         output_dir = env['config'].get('paths', {}).get('output', {}).get('optimisation', 'optimisation')
         output_path = env['file_io'].resolve_path(output_dir, allow_nonexistent=True)
         env['file_io'].create_directory(output_path)
-        
-        # Create optimiser
+          # Create optimiser
         optimiser = HyperparameterOptimiser(
             config_path=env['config_path'],
             data_yaml_path=env['data_path'],
@@ -336,7 +338,8 @@ def optimise_hyperparameters(args: argparse.Namespace, env: Dict) -> None:
             study_name=args.study_name,
             n_trials=args.trials,
             n_jobs=-1,  # Auto-detection
-            verbose=args.verbose
+            verbose=args.verbose,
+            model_type=args.model
         )
         
         # Run optimisation
@@ -372,11 +375,12 @@ def validate_model(args: argparse.Namespace, env: Dict) -> None:
             config_path=env['config_path'],
             data_yaml_path=env['data_path'],
             output_dir=env['output_models_dir'],
-            verbose=args.verbose
+            verbose=args.verbose,
+            model_type=args.model
         )
         
         # Initialize model from the last checkpoint
-        trainer.initialise_model()
+        trainer.initialize_model()
         
         # Validate model
         logger.info("Running validation")
@@ -409,11 +413,12 @@ def export_model(args: argparse.Namespace, env: Dict) -> None:
             config_path=env['config_path'],
             data_yaml_path=env['data_path'],
             output_dir=env['output_models_dir'],
-            verbose=args.verbose
+            verbose=args.verbose,
+            model_type=args.model
         )
         
         # Initialize model from the last checkpoint
-        trainer.initialise_model()
+        trainer.initialize_model()
         
         # Export model
         export_path = trainer.export_model(format=args.export_format)

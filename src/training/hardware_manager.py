@@ -754,14 +754,16 @@ class HardwareManager:
         # Then find optimal worker count using the optimal batch size
         worker_results = self.benchmark_workers(data_path, img_size, batch_size=optimal_batch, max_workers=max_workers)
         optimal_workers = worker_results['optimal_workers']
-        
-        # Apply model size adjustment factor
+          # Apply model size adjustment factor
         model_size_factors = {
             'yolov8n': 1.0,   # nano (baseline for benchmarking)
             'yolov8s': 0.75,  # small
             'yolov8m': 0.5,   # medium
             'yolov8l': 0.35,  # large
-            'yolov8x': 0.25   # xlarge
+            'yolov8x': 0.25,  # xlarge
+            'yolov11s': 0.75, # YOLOv11 small (similar to v8s)
+            'yolov11m': 0.5,  # YOLOv11 medium (similar to v8m)
+            'yolov11l': 0.35  # YOLOv11 large (similar to v8l)
         }
         
         # Get adjustment factor for target model, default to 0.5 if unknown

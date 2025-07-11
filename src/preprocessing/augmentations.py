@@ -17,7 +17,7 @@ class AugmentationManager:
     applied to images during training to improve model robustness and generalisation.
     """
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialise the augmentation manager.
         
@@ -88,7 +88,7 @@ class AugmentationManager:
             # Gaussian noise
             transforms.append(
                 A.GaussNoise(
-                    var_limit=(0, int(self.config['noise']['gaussian_std'] * 255)),
+                    var_limit=(0.0, self.config['noise']['gaussian_std'] * 255),
                     p=0.5
                 )
             )
@@ -137,11 +137,9 @@ class AugmentationManager:
         if self.config['occlusion']['enabled']:
             transforms.append(
                 A.CoarseDropout(
-                    max_holes=3,
-                    max_height=int(self.config['occlusion']['max_area_percentage'] * 100),
-                    max_width=int(self.config['occlusion']['max_area_percentage'] * 100),
-                    min_height=10,
-                    min_width=10,
+                    num_holes_range=(1, 3),
+                    hole_height_range=(10, int(self.config['occlusion']['max_area_percentage'] * 100)),
+                    hole_width_range=(10, int(self.config['occlusion']['max_area_percentage'] * 100)),
                     p=0.5
                 )
             )
@@ -157,7 +155,7 @@ class AugmentationManager:
         transforms.extend([
             A.HorizontalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
-            A.Normalize(mean=[0, 0, 0], std=[1, 1, 1], max_pixel_value=255.0, p=1.0)
+            A.Normalize(mean=(0.0, 0.0, 0.0), std=(1.0, 1.0, 1.0), max_pixel_value=255.0, p=1.0)
         ])
         
         # Create the final pipeline
@@ -168,9 +166,8 @@ class AugmentationManager:
         
         self.logger.info(f"Created augmentation pipeline with {len(transforms)} transforms")
         return transform
-    
-    def apply(self, image: np.ndarray, bboxes: List[List[float]] = None, 
-              class_labels: List[int] = None) -> Tuple[np.ndarray, List[List[float]]]:
+    def apply(self, image: np.ndarray, bboxes: Optional[List[List[float]]] = None,
+              class_labels: Optional[List[int]] = None) -> Tuple[np.ndarray, List[List[float]]]:
         """
         Apply augmentations to an image and its bounding boxes.
         
@@ -230,21 +227,23 @@ class AugmentationManager:
             kernel_size = int(self.config['motion_blur']['kernel_size'] * strength)
             kernel_size = max(3, kernel_size if kernel_size % 2 == 1 else kernel_size + 1)
             angle = random.uniform(*self.config['motion_blur']['angle_range'])
-            motion_blur = A.MotionBlur(blur_limit=kernel_size)
-            return motion_blur.apply(image)
+            motion_blur = A.MotionBlur(blur_limit=kernel_size, p=1.0)
+            # Create augmentation result format expected by albumentations
+            augmented = motion_blur(image=image)
+            return augmented['image']
         
         elif augmentation_type == 'occlusion':
             # Apply occlusion
             max_area = self.config['occlusion']['max_area_percentage'] * strength
             occlusion = A.CoarseDropout(
-                max_holes=3,
-                max_height=int(max_area * image.shape[0]),
-                max_width=int(max_area * image.shape[1]),
-                min_height=10,
-                min_width=10,
+                num_holes_range=(1, 3),
+                hole_height_range=(10, int(max_area * image.shape[0])),
+                hole_width_range=(10, int(max_area * image.shape[1])),
                 p=1.0
             )
-            return occlusion.apply(image)
+            # Create augmentation result format expected by albumentations
+            augmented = occlusion(image=image)
+            return augmented['image']
         
         else:
             self.logger.warning(f"Unknown augmentation type: {augmentation_type}")
@@ -327,7 +326,7 @@ class LensDistortion(ImageOnlyTransform):
             always_apply: Whether to always apply the transform
             p: Probability of applying the transform
         """
-        super().__init__(always_apply, p)
+        super().__init__(p=p)  # Pass p parameter correctly
         self.barrel_factor = barrel_factor
         self.pincushion_factor = pincushion_factor
     

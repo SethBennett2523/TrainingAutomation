@@ -14,7 +14,7 @@ paths:
 hardware:
   # Set to 'auto' for automatic detection, or explicitly set to 'cuda', 'rocm', or 'cpu'
   device: "auto"
-  # Set to 0 for automatic optimization based on available memory, or specify a value
+  # Set to 0 for automatic optimisation based on available memory, or specify a value
   batch_size: 0
   workers: 0  # Number of data loader workers, 0 for automatic setting
   memory_threshold: 0.85  # Maximum VRAM usage as a fraction (0.0-1.0)
@@ -22,30 +22,109 @@ hardware:
 # Training parameters
 training:
   epochs: 300
-  img_size: 640
+  img_size: 704  # Higher resolution improves small object detection
   early_stopping:
     enabled: true
-    patience: 20  # Number of epochs with no improvement to wait before stopping
-    min_delta: 0.0001  # Minimum change to qualify as improvement
+    patience: 40  # Higher patience allows more training time
+    min_delta: 0.00005  # Minimum change to qualify as improvement
+    recall_threshold: 0.85  # Minimum acceptable recall threshold
+    recall_weight: 0.8  # Higher weight prioritizes recall in early stopping
   pretrained: false  # Must be false as per requirements
   name_format: "${USERNAME}${YY}w${WW}${SUFFIX}"  # Runtime variables are in ${VAR} format
+  
+  # Loss function weights
+  loss_weights:
+    box: 9.0     # Higher box weight improves localization accuracy
+    cls: 0.8     # Higher classification weight improves class prediction
+    obj: 1.2     # Higher objectness weight improves detection confidence
+    
+  # Training optimisation
+  optimisation:
+    # Focal loss parameters for handling class imbalance
+    focal_loss_gamma: 2.0  # Higher gamma focuses more on hard examples
+    label_smoothing: 0.05   # Lower smoothing preserves stronger class signals
+    
+    # Anchor optimisation  
+    anchor_threshold: 3.0  # Lower threshold generates more positive anchors
+    
+    # Augmentation intensity
+    mosaic_prob: 0.6      # Lower mosaic probability preserves object visibility
+    mixup_prob: 0.05      # Lower mixup reduces potential object confusion
+    copy_paste_prob: 0.4  # Copy-paste augmentation increases object instances
 
-# Hyperparameter optimization
-hyperparameter_optimization:
+# Hyperparameter optimisation
+hyperparameter_optimisation:
   enabled: true
-  method: "optuna"  # Optimization method (optuna, ray)
-  trials: 20  # Number of optimization trials
+  method: "optuna"  # optimisation method (optuna, ray)
+  trials: 30  # Number of optimisation trials
+  
+  # optimisation objective
+  objective:
+    primary_metric: "metrics/recall(B)"  # Primary metric to optimize
+    secondary_metric: "metrics/mAP50(B)" # Secondary metric consideration
+    recall_weight: 0.7  # Higher weight prioritizes recall optimization
+    map_weight: 0.3     # Lower weight balances overall performance
+  
   params:
+    # Learning rate optimisation
     learning_rate:
-      min: 0.0001
+      min: 0.0005
       max: 0.01
+      log: true
+    
+    # Momentum for better convergence
     momentum:
-      min: 0.8
+      min: 0.85
       max: 0.99
+    
+    # Weight decay for regularization
     weight_decay:
       min: 0.0001
       max: 0.01
-    subdivisions: [1, 2, 4, 8]  # List of possible values
+      log: true
+    
+    # Batch size optimisation
+    batch_size: [8, 16, 24, 32]  # Larger batch sizes for stability
+    
+    # Image size optimisation
+    img_size: [608, 640, 672]  # Higher resolution for small objects
+    
+    # Loss function weights
+    box_loss_gain:
+      min: 5.0
+      max: 10.0
+    
+    cls_loss_gain:
+      min: 0.3
+      max: 1.0
+    
+    obj_loss_gain:
+      min: 0.5
+      max: 1.5
+    
+    # Focal loss gamma (for handling hard examples)
+    focal_loss_gamma:
+      min: 0.0
+      max: 2.0
+    
+    # Anchor threshold (lower = more positive anchors)
+    anchor_threshold:
+      min: 2.0
+      max: 6.0
+    
+    # Data augmentation intensities
+    mosaic_prob:
+      min: 0.5
+      max: 1.0
+    
+    mixup_prob:
+      min: 0.0
+      max: 0.3
+    
+    # Class loss positive weight (for handling class imbalance)
+    cls_pos_weight:
+      min: 0.5
+      max: 2.0
 
 # Label conversion settings
 label_conversion:
@@ -59,3 +138,23 @@ logging:
   tensorboard: true
   save_best_only: true
   checkpoint_interval: 10  # Save a checkpoint every N epochs
+
+# Inference configuration
+inference:
+  # Lower confidence threshold increases recall but may reduce precision
+  confidence_threshold: 0.05  
+  # Lower IoU threshold reduces NMS suppression, improving recall
+  iou_threshold: 0.4          
+  # Higher max detections allows more objects to be detected per image
+  max_detections: 500         
+  
+  # Multi-scale inference for better detection
+  multi_scale:
+    enabled: true
+    scales: [0.8, 1.0, 1.2]   # Test multiple scales
+    
+  # Test-time augmentation
+  tta:
+    enabled: false  # Can be enabled for critical applications
+    horizontal_flip: true
+    scales: [0.9, 1.0, 1.1]

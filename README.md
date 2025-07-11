@@ -13,7 +13,7 @@ A series of programs to simplify the process of designing and training YOLO mode
 ## Dataset
 
 This project was built for the FSOCO `bounding boxes` dataset.
-The FSOCO dataset can be downloaded directly [here](http://fsoco.cs.uni-freiburg.de/datasets/fsoco_bounding_boxes_train.zip) or torrented using this magnet link:
+The FSOCO dataset can be downloaded directly [from the fsoco website](http://fsoco.cs.uni-freiburg.de/datasets/fsoco_bounding_boxes_train.zip) or torrented using this magnet link:
 
 ```magnet
 magnet:?xt=urn:btih:aedcdd632f60b698ed9a94d2f5c4c145aa06aad7&dn=fsoco_bounding_boxes_train.zip&tr=udp%3a%2f%2ftracker.torrent.eu.org%3a451%2fannounce

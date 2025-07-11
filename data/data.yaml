@@ -1,6 +1,6 @@
-# Data configuration for YOLOv8 training
+# Data configuration for YOLO training
 
-# Path to training and validation datasets - these should be relative paths
+# Path to training and validation datasets - these are relative paths
 train: FSOCO_dataset/train/
 val: FSOCO_dataset/valid/
 
@@ -20,27 +20,48 @@ description: "FSOCO Dataset with the 5 cone classes for traffic cone detection"
 augmentations:
   noise:
     enabled: true
-    gaussian_std: 0.03
-    salt_pepper_prob: 0.01
+    gaussian_std: 0.02
+    salt_pepper_prob: 0.005
   
   distortion:
     enabled: true
-    barrel_factor: 0.2
-    pincushion_factor: 0.1
+    barrel_factor: 0.15
+    pincushion_factor: 0.08
   
   distance_simulation:
     enabled: true
-    min_scale: 0.5
-    max_scale: 1.5
+    min_scale: 0.6
+    max_scale: 1.4
   
   motion_blur:
     enabled: true
-    kernel_size: 7
-    angle_range: [-45, 45]
-  
+    kernel_size: 5
+    angle_range: [-30, 30]
+
   occlusion:
     enabled: true
-    max_area_percentage: 0.20
+    max_area_percentage: 0.15
+  
+  # Additional augmentations for better cone detection
+  color_augmentations:
+    enabled: true
+    brightness_limit: 0.15
+    contrast_limit: 0.15
+    hue_shift_limit: 10
+    saturation_limit: 0.2
+
+  # Copy-paste augmentation for increasing cone instances
+  copy_paste:
+    enabled: true
+    probability: 0.3        # Apply to 30% of images
+    max_instances: 3        # Add up to 3 copied cone instances per image
+  
+  # Small object augmentation (important for distant cones)
+  small_object_augmentation:
+    enabled: true
+    min_area_ratio: 0.001   # Minimum area ratio for small objects
+    max_area_ratio: 0.1     # Maximum area ratio for small objects
+    repeat_factor: 2        # Repeat small objects to balance dataset
 
 # Split ratio for creating validation set from training data if not already split
 split_ratio: 0.2

@@ -74,7 +74,7 @@ def parse_arguments() -> argparse.Namespace:
     
     # Main operation mode
     parser.add_argument('--mode', type=str, default='train',
-                        choices=['train', 'optimise', 'validate', 'export', 'convert'], 
+                        choices=['train', 'optimise', 'validate', 'export', 'convert', 'tune-thresholds'], 
                         help="Operation mode")
     
     # Configuration paths
@@ -124,6 +124,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--export-format', type=str, default='onnx',
                         choices=['onnx', 'torchscript', 'openvino', 'tflite'],
                         help="Model export format")
+    
+    # Threshold tuning options
+    parser.add_argument('--model-path', type=str, default=None,
+                        help="Path to trained model for threshold tuning")
+    parser.add_argument('--target-metric', type=str, default='recall',
+                        choices=['recall', 'precision', 'f1'],
+                        help="Target metric for threshold optimisation")
     
     # Logging options
     parser.add_argument('--verbose', action='store_true',
@@ -222,7 +229,7 @@ def prepare_environment(args: argparse.Namespace) -> Dict:
     if args.no_occlusion:
         data_config['augmentations']['occlusion'] = {'enabled': False}
     
-    # Initialize hardware manager
+    # Initialise hardware manager
     hw_manager = HardwareManager(config_path)
     
     # Get output paths
@@ -252,7 +259,7 @@ def prepare_environment(args: argparse.Namespace) -> Dict:
 
 def train_model(args: argparse.Namespace, env: Dict) -> None:
     """
-    Train a YOLOv8 model.
+    Train a YOLO model.
     
     Args:
         args: Command-line arguments
@@ -286,8 +293,8 @@ def train_model(args: argparse.Namespace, env: Dict) -> None:
             if not args.workers:  # Only override if not explicitly set by user
                 args.workers = optimal_params['workers']
         
-        # Initialize model
-        trainer.initialize_model()
+        # Initialise model
+        trainer.initialize_model()  # Initialises the model with optimised parameters
         
         # Train model
         logger.info("Starting training")
@@ -375,7 +382,7 @@ def validate_model(args: argparse.Namespace, env: Dict) -> None:
             verbose=args.verbose
         )
         
-        # Initialize model from the last checkpoint
+        # Initialise model from the last checkpoint
         trainer.initialise_model()
         
         # Validate model
@@ -412,7 +419,7 @@ def export_model(args: argparse.Namespace, env: Dict) -> None:
             verbose=args.verbose
         )
         
-        # Initialize model from the last checkpoint
+        # Initialise model from the last checkpoint
         trainer.initialise_model()
         
         # Export model
@@ -542,6 +549,97 @@ def convert_labels(args: argparse.Namespace, env: Dict) -> None:
         sys.exit(1)
 
 
+def tune_thresholds(args: argparse.Namespace, env: Dict) -> None:
+    """
+    Tune confidence and IoU thresholds for optimal recall.
+    
+    Args:
+        args: Command-line arguments
+        env: Environment information
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Starting threshold tuning for reducing false negatives")
+    
+    try:
+        # Import threshold tuning module
+        from src.inference.threshold_tuning import ThresholdTuner
+        
+        # Determine model path
+        model_path = args.model_path
+        if not model_path:
+            # Look for the best model in the output directory
+            output_dir = env['output_models_dir']
+            potential_paths = [
+                os.path.join(output_dir, "best.pt"),
+                os.path.join(output_dir, "last.pt"),
+                # Look in subdirectories
+                *[os.path.join(root, f) for root, _, files in os.walk(output_dir) 
+                  for f in files if f in ['best.pt', 'last.pt']]
+            ]
+            
+            for path in potential_paths:
+                if os.path.exists(path):
+                    model_path = path
+                    break
+            
+            if not model_path:
+                logger.error(f"No model found. Please specify --model-path or ensure a trained model exists in {output_dir}")
+                sys.exit(1)
+        
+        if not os.path.exists(model_path):
+            logger.error(f"Model not found at: {model_path}")
+            sys.exit(1)
+        
+        logger.info(f"Using model: {model_path}")
+        
+        # Create threshold tuner
+        tuner = ThresholdTuner(
+            model_path=model_path,
+            data_yaml_path=env['data_path'],
+            output_dir=os.path.join(env['output_models_dir'], "threshold_tuning"),
+            verbose=args.verbose
+        )
+        
+        # Perform comprehensive threshold tuning
+        logger.info("Running comprehensive threshold tuning...")
+        optimal_config = tuner.comprehensive_threshold_tuning(
+            conf_range=(0.05, 0.8),  # Lower confidence range for better recall
+            iou_range=(0.1, 0.9),
+            conf_steps=20,
+            iou_steps=15
+        )
+        
+        # Log results
+        logger.info("Threshold tuning completed!")
+        logger.info(f"Optimal configuration for reducing false negatives:")
+        logger.info(f"  Confidence threshold: {optimal_config['confidence_threshold']:.3f}")
+        logger.info(f"  IoU threshold: {optimal_config['iou_threshold']:.3f}")
+        logger.info(f"Expected performance with these thresholds:")
+        for metric, value in optimal_config['expected_metrics'].items():
+            logger.info(f"  {metric}: {value:.3f}")
+        
+        # Save to config file for easy use
+        threshold_config_path = os.path.join(env['output_models_dir'], "optimal_inference_config.yaml")
+        inference_config = {
+            'model_path': model_path,
+            'confidence_threshold': optimal_config['confidence_threshold'],
+            'iou_threshold': optimal_config['iou_threshold'],
+            'expected_metrics': optimal_config['expected_metrics'],
+            'tuning_date': datetime.now().isoformat(),
+            'note': 'Optimized for maximum recall (minimum false negatives)'
+        }
+        
+        with open(threshold_config_path, 'w') as f:
+            import yaml
+            yaml.dump(inference_config, f, default_flow_style=False)
+        
+        logger.info(f"Saved inference configuration to: {threshold_config_path}")
+        
+    except Exception as e:
+        logger.error(f"Error during threshold tuning: {e}", exc_info=True)
+        sys.exit(1)
+
+
 def main():
     """
     Main entry point for the application.
@@ -571,6 +669,8 @@ def main():
             export_model(args, env)
         elif args.mode == 'convert': 
             convert_labels(args, env)
+        elif args.mode == 'tune-thresholds':
+            tune_thresholds(args, env)
         else:
             logger.error(f"Unknown mode: {args.mode}")
             sys.exit(1)

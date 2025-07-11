@@ -1,0 +1,157 @@
+paths:
+  dataset:
+    root: ./data/FSOCO_dataset
+    data_yaml: ./data/data.yaml
+  output:
+    models: ./models
+    logs: ./logs
+hardware:
+  device: auto
+  batch_size: 0
+  workers: 0
+  memory_threshold: 0.85
+training:
+  epochs: 400  # Extended epochs for convergence
+  img_size: 704  # Higher resolution improves small object detection
+  early_stopping:
+    enabled: true
+    patience: 50  # Extended patience for recall optimization
+    min_delta: 5.0e-05
+    recall_threshold: 0.85  # Minimum acceptable recall threshold
+    recall_weight: 0.8  # Higher weight prioritizes recall
+  pretrained: false
+  name_format: ${USERNAME}${YY}w${WW}_recall_optimized
+  loss_weights:
+    box: 9.0  # Higher box weight improves localization
+    cls: 0.8  # Higher classification weight improves accuracy
+    obj: 1.2  # Higher objectness weight improves detection
+  optimisation:
+    focal_loss_gamma: 2.0  # Higher gamma focuses on hard examples
+    label_smoothing: 0.05  # Lower smoothing preserves class signals
+    anchor_threshold: 3.0  # Lower threshold generates more anchors
+    mosaic_prob: 0.6  # Reduced mosaic preserves object visibility
+    mixup_prob: 0.05  # Minimal mixup reduces confusion
+    copy_paste_prob: 0.4  # Copy-paste increases object instances
+    cls_pos_weight: 1.5  # Higher positive weight handles imbalance
+    objectness_smooth: 0.9  # High smoothing improves objectness
+hyperparameter_optimisation:
+  enabled: true
+  method: optuna
+  trials: 50
+  objective:
+    primary_metric: metrics/recall(B)  # Primary optimization target
+    secondary_metric: metrics/mAP50(B)  # Secondary performance metric
+    recall_weight: 0.85  # Very high weight prioritizes recall
+    map_weight: 0.15  # Low weight balances overall performance
+  params:
+    learning_rate:
+      min: 0.0001
+      max: 0.008
+      log: true
+    momentum:
+      min: 0.9
+      max: 0.99
+    weight_decay:
+      min: 5.0e-05
+      max: 0.005
+      log: true
+    batch_size:
+    - 12
+    - 16
+    - 20
+    - 24
+    img_size:
+    - 640
+    - 672
+    - 704
+    - 736
+    box_loss_gain:
+      min: 7.0
+      max: 12.0
+    cls_loss_gain:
+      min: 0.6
+      max: 1.2
+    obj_loss_gain:
+      min: 0.8
+      max: 1.5
+    focal_loss_gamma:
+      min: 1.0
+      max: 3.0
+    anchor_threshold:
+      min: 2.0
+      max: 4.0
+    mosaic_prob:
+      min: 0.4
+      max: 0.8
+    mixup_prob:
+      min: 0.0
+      max: 0.1
+    cls_pos_weight:
+      min: 1.0
+      max: 2.5
+inference:
+  confidence_threshold: 0.05  # Lower threshold increases recall
+  iou_threshold: 0.4  # Lower IoU reduces NMS suppression
+  max_detections: 500  # Higher limit allows more detections
+  multi_scale:
+    enabled: true
+    scales:  # Multiple scales improve detection robustness
+    - 0.75
+    - 0.9
+    - 1.0
+    - 1.1
+    - 1.25
+  tta:
+    enabled: true  # Test-time augmentation improves performance
+    horizontal_flip: true
+    vertical_flip: false  # Preserve object orientation
+    scales:
+    - 0.9
+    - 1.0
+    - 1.1
+    confidence_aggregation: max
+data_augmentation:
+  small_object_augmentation:
+    enabled: true
+    min_area_ratio: 0.0005
+    max_area_ratio: 0.08
+    repeat_factor: 3
+    scale_jitter: 0.1
+  copy_paste:
+    enabled: true
+    probability: 0.5
+    max_instances: 5
+    scale_range:
+    - 0.8
+    - 1.2
+    aspect_ratio_range:
+    - 0.9
+    - 1.1
+  photometric:
+    brightness_limit: 0.1
+    contrast_limit: 0.1
+    saturation_limit: 0.15
+    hue_shift_limit: 5
+  distance_simulation:
+    enabled: true
+    min_scale: 0.5
+    max_scale: 1.5
+    blur_distant: true
+    noise_distant: true
+  occlusion:
+    enabled: true
+    max_occlusion: 0.3
+    preserve_keypoints: true
+validation:
+  frequency: 5
+  save_best_recall: true
+  recall_threshold: 0.9
+  precision_minimum: 0.75
+  early_stop_on_recall: true
+logging:
+  level: INFO
+  tensorboard: true
+  save_best_only: true
+  checkpoint_interval: 10
+  log_recall_curves: true
+  save_prediction_samples: true

@@ -1,5 +1,16 @@
 **/logs
 **/optimisation
-
 **/pycache
 **/__pycache__
+**/FSOCO_dataset/**
+**/data/**
+**/runs/**
+**/results/**
+**/outputs/**
+**/checkpoints/**
+**/experiments/**
+**/models/**
+**/saved_models/**
+**/saved_models_*/**.Notes/
+.Logs/
+.Notes/
